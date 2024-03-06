@@ -1,2 +1,4 @@
 /model/__pycache__/*
 /cache
+/data/__pycache__/*
+/utils/__pycache__/*

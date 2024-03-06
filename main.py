@@ -30,7 +30,7 @@ def subsequent_mask(size):
 def train_one_epoch(config, model, train_loader, optimizer, criterion, scheduler):
     model.train()
     train_loss = 0
-    for src_input, tgt_input in tqdm(train_loader, desc=f"Epoch", leave=False):
+    for src_input, tgt_input in tqdm(train_loader, desc=f"Epoch", leave=False, position=1):
         src = src_input['input_ids']
         src_attmask = src_input['src_mask']
 
@@ -52,6 +52,27 @@ def train_one_epoch(config, model, train_loader, optimizer, criterion, scheduler
     return train_loss / len(train_loader)
 
 
+def evaluate(config, model, val_loader, criterion):
+    model.eval()
+    val_loss = 0
+    with torch.no_grad():
+        for src_input, tgt_input in tqdm(val_loader, desc=f"Val", leave=False):
+            src = src_input['input_ids']
+            src_attmask = src_input['src_mask']
+
+            tgt = tgt_input['input_ids']
+            tgt_attmask = tgt_input['tgt_mask']
+
+            src, tgt = src.to(config.device), tgt.to(config.device)
+            output = model(src, tgt[:, :-1], src_attmask, tgt_attmask)
+
+            output = output.contiguous().view(-1, output.size(-1))
+            tgt = tgt[:, 1:].contiguous().view(-1)
+            loss = criterion(output, tgt)
+            val_loss += loss.item()
+    return val_loss / len(val_loader)
+
+
 def train_model(config, model, train_loader, val_loader, optimizer, criterion, scheduler):
     model = model.to(config.device)
     best_loss = float("inf")
@@ -61,7 +82,7 @@ def train_model(config, model, train_loader, val_loader, optimizer, criterion, s
     if config.EarlyStop.early_stop:
         early_stopping = EarlyStopping(patience=config.EarlyStop.patience, delta=config.EarlyStop.delta)
 
-    for epoch in tqdm(range(1, config.Train.epochs + 1), desc=f"All"):
+    for epoch in tqdm(range(1, config.Train.epochs + 1), desc=f"All", position=0):
 
         train_loss = train_one_epoch(
             config, model, train_loader, optimizer, criterion, scheduler)
