@@ -1,10 +1,10 @@
 Data:
-  in_path: C:\Users\mzm\pythonProject\path_test\NLP_test\raw_data\couplet\train\in.txt
-  out_path: C:\Users\mzm\pythonProject\path_test\NLP_test\raw_data\couplet\train\out.txt
+  in_path: ..\Data\couplet\train\in.txt
+  out_path: ..\Data\couplet\train\out.txt
   val_ratio: 0.1
 
 Train:
-  batch_size: 8
+  batch_size: 64
   epochs: 100
 
 Optim:
@@ -19,8 +19,8 @@ Scheduler:
   warmup_ratio: 0.12
 
 Save:
-  img_save_dir: C:\Users\mzm\pythonProject\path_test\NLP_test\save\img
-  model_save_dir: C:\Users\mzm\pythonProject\path_test\NLP_test\save\model_save
+  img_save_dir: ..\save\img
+  model_save_dir: ..\save\model_save
 
 EarlyStop:
   early_stop: True
@@ -30,7 +30,7 @@ EarlyStop:
 seed: 25560
 cuDNN: False
 debug: False
-device: cpu
+device: cuda
 
 
 #class Config:

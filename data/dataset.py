@@ -17,9 +17,7 @@ class MyDataset(Dataset):
 
     def get_tokenizer(self):
         tokenizer = BertTokenizer.from_pretrained(
-            pretrained_model_name_or_path='bert-base-chinese',  # 可选，huggingface 中的预训练模型名称或路径，默认为 bert-base-chinese
-            cache_dir=r'C:\Users\mzm\pythonProject\path_test\NLP_test\project\cache', local_files_only=True
-)
+            pretrained_model_name_or_path='bert-base-chinese',local_files_only=True)
         return tokenizer
 
     def __len__(self):
@@ -65,9 +63,9 @@ class MyDataset(Dataset):
 
 if __name__ == '__main__':
     torch.set_printoptions(precision=None, threshold=None, edgeitems=None, linewidth=2000, profile=None, sci_mode=None)
-    filepath = [r'C:\Users\mzm\pythonProject\path_test\NLP_test\raw_data\couplet\train\in.txt',
-                r'C:\Users\mzm\pythonProject\path_test\NLP_test\raw_data\couplet\train\out.txt']
-    data = MyDataset(filepath)
+    filepath = [r'../../Data/couplet/train/in.txt',
+                r'../../Data/couplet/train/out.txt']
+    data = MyDataset(load_data(filepath))
     loader = data.get_loader(5)
     for i in loader:
         print(type(i))

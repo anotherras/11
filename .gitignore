@@ -2,3 +2,5 @@
 /cache
 /data/__pycache__/*
 /utils/__pycache__/*
+/wandb
+__pycache__/

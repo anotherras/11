@@ -1,3 +1,4 @@
+import wandb
 from model.model import make_model
 from model.Embedding import PositionalEncoding, Embeddings
 from loguru import logger
@@ -32,10 +33,10 @@ def train_one_epoch(config, model, train_loader, optimizer, criterion, scheduler
     train_loss = 0
     for src_input, tgt_input in tqdm(train_loader, desc=f"Epoch", leave=False, position=1):
         src = src_input['input_ids']
-        src_attmask = src_input['src_mask']
+        src_attmask = src_input['src_mask'].to(config.device)
 
         tgt = tgt_input['input_ids']
-        tgt_attmask = tgt_input['tgt_mask']
+        tgt_attmask = tgt_input['tgt_mask'].to(config.device)
 
         src, tgt = src.to(config.device), tgt.to(config.device)
         output = model(src, tgt[:, :-1], src_attmask, tgt_attmask)
@@ -80,10 +81,10 @@ def train_model(config, model, train_loader, val_loader, optimizer, criterion, s
     model_path = os.path.join(config.Save.model_save_dir, f"model_best.pth")
 
     if config.EarlyStop.early_stop:
+        logger.info('Use EarlyStop')
         early_stopping = EarlyStopping(patience=config.EarlyStop.patience, delta=config.EarlyStop.delta)
 
     for epoch in tqdm(range(1, config.Train.epochs + 1), desc=f"All", position=0):
-
         train_loss = train_one_epoch(
             config, model, train_loader, optimizer, criterion, scheduler)
 
@@ -91,7 +92,9 @@ def train_model(config, model, train_loader, val_loader, optimizer, criterion, s
 
         perplexity = math.exp(val_loss)
         history.append((epoch, train_loss, val_loss))
-        msg = f"Epoch {epoch}/{config.epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, Perplexity: {perplexity:.4f}"
+        metrics = {'epoch': epoch, 'train_loss': train_loss, 'val_loss': val_loss}
+        wandb.log(metrics)
+        msg = f"Epoch {epoch}/{config.Train.epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, Perplexity: {perplexity:.4f}"
         logger.info(msg)
         if val_loss < best_loss:
             logger.info(
@@ -99,7 +102,7 @@ def train_model(config, model, train_loader, val_loader, optimizer, criterion, s
             )
             torch.save(model.state_dict(), model_path)
             best_loss = val_loss
-        if config.early_stop:
+        if config.EarlyStop.early_stop:
             early_stopping(val_loss, model)
             if early_stopping.early_stop:
                 logger.info(f"Early stopping at epoch {epoch}")
@@ -122,6 +125,11 @@ def train_model(config, model, train_loader, val_loader, optimizer, criterion, s
 
 
 def main(config):
+    wandb.alert(
+        title="Start",
+        text=f"training"
+    )
+
     seed_everything(config.seed)
     logger.info(f"Set random seed to {config.seed}")
 
@@ -177,6 +185,7 @@ def main(config):
         else:
             return lr_max * gamma ** (cur_iter - warm_up_iter)
 
+    logger.info('Use warm up')
     scheduler = LambdaLR(optimizer, lr_lambda=WarmupExponentialLR)
 
     df_lr = pd.DataFrame(
@@ -216,7 +225,8 @@ def get_args():
         new_config = dict2namespace(config)
     return new_config
 
-
 if __name__ == '__main__':
     config = get_args()
+    wandb.init(project='test', name='demo')
     main(config)
+    wandb.finish()
