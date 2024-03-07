@@ -28,7 +28,7 @@ EarlyStop:
   delta: 0
 
 seed: 25560
-cuDNN: False
+cuDNN: True
 debug: False
 device: cuda
 

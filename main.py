@@ -17,6 +17,9 @@ import seaborn as sns
 import pandas as pd
 import math
 from torch.optim.lr_scheduler import LambdaLR
+import sys
+
+sys.path.append('./model')
 
 
 def subsequent_mask(size):
@@ -41,7 +44,6 @@ def train_one_epoch(config, model, train_loader, optimizer, criterion, scheduler
         src, tgt = src.to(config.device), tgt.to(config.device)
         output = model(src, tgt[:, :-1], src_attmask, tgt_attmask)
 
-        # 先到这里
         output = output.contiguous().view(-1, output.size(-1))
         tgt = tgt[:, 1:].contiguous().view(-1)
         loss = criterion(output, tgt)
@@ -59,10 +61,10 @@ def evaluate(config, model, val_loader, criterion):
     with torch.no_grad():
         for src_input, tgt_input in tqdm(val_loader, desc=f"Val", leave=False):
             src = src_input['input_ids']
-            src_attmask = src_input['src_mask']
+            src_attmask = src_input['src_mask'].to(config.device)
 
             tgt = tgt_input['input_ids']
-            tgt_attmask = tgt_input['tgt_mask']
+            tgt_attmask = tgt_input['tgt_mask'].to(config.device)
 
             src, tgt = src.to(config.device), tgt.to(config.device)
             output = model(src, tgt[:, :-1], src_attmask, tgt_attmask)
@@ -91,9 +93,9 @@ def train_model(config, model, train_loader, val_loader, optimizer, criterion, s
         val_loss = evaluate(config, model, val_loader, criterion)
 
         perplexity = math.exp(val_loss)
-        history.append((epoch, train_loss, val_loss))
         metrics = {'epoch': epoch, 'train_loss': train_loss, 'val_loss': val_loss}
         wandb.log(metrics)
+        history.append((epoch, train_loss, val_loss))
         msg = f"Epoch {epoch}/{config.Train.epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, Perplexity: {perplexity:.4f}"
         logger.info(msg)
         if val_loss < best_loss:
@@ -225,7 +227,9 @@ def get_args():
         new_config = dict2namespace(config)
     return new_config
 
+
 if __name__ == '__main__':
+    logger.add('../save/log/logger.log')
     config = get_args()
     wandb.init(project='test', name='demo')
     main(config)
