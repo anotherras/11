@@ -1,0 +1,39 @@
+2024-07-29 22:03:41.272 | INFO     | __main__:main:136 - Set random seed to 25560
+2024-07-29 22:05:05.045 | INFO     | __main__:main:136 - Set random seed to 25560
+2024-07-29 22:05:06.098 | INFO     | __main__:main:147 - Load 770491 couplets
+2024-07-29 22:15:09.586 | INFO     | __main__:main:136 - Set random seed to 25560
+2024-07-29 22:15:10.635 | INFO     | __main__:main:147 - Load 770491 couplets
+2024-07-29 22:15:41.178 | INFO     | __main__:main:136 - Set random seed to 25560
+2024-07-29 22:15:42.230 | INFO     | __main__:main:147 - Load 770491 couplets
+2024-07-29 22:24:45.878 | INFO     | __main__:main:136 - Set random seed to 25560
+2024-07-29 22:25:45.147 | INFO     | __main__:main:136 - Set random seed to 25560
+2024-07-29 22:25:46.196 | INFO     | __main__:main:147 - Load 770491 couplets
+2024-07-29 22:26:35.697 | INFO     | __main__:main:136 - Set random seed to 25560
+2024-07-29 22:26:36.758 | INFO     | __main__:main:147 - Load 770491 couplets
+2024-07-29 22:26:37.052 | INFO     | __main__:main:155 - Build train dataset with 693441 samples
+2024-07-29 22:26:37.053 | INFO     | __main__:main:156 - Build val dataset with 77050 samples
+2024-07-29 22:26:37.053 | INFO     | __main__:main:162 - Build train dataloader with 10836 batches
+2024-07-29 22:26:37.053 | INFO     | __main__:main:163 - Build val dataloader with 1204 batches
+2024-07-29 22:26:37.786 | INFO     | __main__:main:166 - Build model with mdoel
+2024-07-29 22:26:37.788 | INFO     | __main__:main:190 - Use warm up
+2024-07-29 22:27:30.099 | INFO     | __main__:main:136 - Set random seed to 25560
+2024-07-29 22:27:31.170 | INFO     | __main__:main:147 - Load 770491 couplets
+2024-07-29 22:27:31.476 | INFO     | __main__:main:155 - Build train dataset with 693441 samples
+2024-07-29 22:27:31.477 | INFO     | __main__:main:156 - Build val dataset with 77050 samples
+2024-07-29 22:27:31.477 | INFO     | __main__:main:162 - Build train dataloader with 10836 batches
+2024-07-29 22:27:31.477 | INFO     | __main__:main:163 - Build val dataloader with 1204 batches
+2024-07-29 22:27:32.209 | INFO     | __main__:main:166 - Build model with mdoel
+2024-07-29 22:27:32.211 | INFO     | __main__:main:190 - Use warm up
+2024-07-29 22:27:32.665 | INFO     | __main__:main:204 - Save learning rate schedule to /home/ljp/Project/ProteinProject/cache/Save/img/lr_schedule.png
+2024-07-29 22:27:35.450 | INFO     | __main__:train_model:86 - Use EarlyStop
+2024-07-29 22:37:07.229 | INFO     | __main__:main:138 - Set random seed to 25560
+2024-07-29 22:37:08.282 | INFO     | __main__:main:149 - Load 770491 couplets
+2024-07-29 22:37:08.588 | INFO     | __main__:main:157 - Build train dataset with 693441 samples
+2024-07-29 22:37:08.589 | INFO     | __main__:main:158 - Build val dataset with 77050 samples
+2024-07-29 22:37:08.589 | INFO     | __main__:main:164 - Build train dataloader with 10836 batches
+2024-07-29 22:37:08.589 | INFO     | __main__:main:165 - Build val dataloader with 1204 batches
+2024-07-29 22:37:09.320 | INFO     | __main__:main:168 - Build model with mdoel
+2024-07-29 22:37:09.321 | INFO     | __main__:main:192 - Use warm up
+2024-07-29 22:37:09.777 | INFO     | __main__:main:206 - Save learning rate schedule to /home/ljp/Project/ProteinProject/cache/Save/img/lr_schedule.png
+2024-07-29 22:37:12.538 | INFO     | __main__:train_model:88 - Use EarlyStop
+2024-07-29 23:26:41.039 | INFO     | __main__:main:138 - Set random seed to 25560

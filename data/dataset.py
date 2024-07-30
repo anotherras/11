@@ -1,4 +1,4 @@
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader,DistributedSampler
 from transformers import BertTokenizer
 import torch
 
@@ -17,7 +17,7 @@ class MyDataset(Dataset):
 
     def get_tokenizer(self):
         tokenizer = BertTokenizer.from_pretrained(
-            pretrained_model_name_or_path='bert-base-chinese',local_files_only=True)
+            pretrained_model_name_or_path='bert-base-chinese',local_files_only=True,cache_dir='/home/ljp/Project/ProteinProject/cache')
         return tokenizer
 
     def __len__(self):
@@ -56,19 +56,25 @@ class MyDataset(Dataset):
         out_tensor['tgt_mask'] = tgt_mask
         return in_tensor, out_tensor
 
-    def get_loader(self, batch_size, shuffle=True):
-        return DataLoader(self, batch_size=batch_size, shuffle=shuffle,
-                          collate_fn=lambda batch: self.collate_fn(batch, self.tokenizer))
+    def get_loader(self, batch_size, shuffle=True , sampler=False):
+        if sampler :
+            return DataLoader(self, batch_size=batch_size, shuffle=shuffle,
+                          collate_fn=lambda batch: self.collate_fn(batch, self.tokenizer),pin_memory=True,sampler=DistributedSampler(self))
+        else:
+            return DataLoader(self, batch_size=batch_size, shuffle=shuffle,
+                            collate_fn=lambda batch: self.collate_fn(batch, self.tokenizer))
 
 
 if __name__ == '__main__':
-    torch.set_printoptions(precision=None, threshold=None, edgeitems=None, linewidth=2000, profile=None, sci_mode=None)
-    filepath = [r'../../Data/couplet/train/in.txt',
-                r'../../Data/couplet/train/out.txt']
-    data = MyDataset(load_data(filepath))
-    loader = data.get_loader(5)
-    for i in loader:
-        print(type(i))
-        print(len(i))
-        print(i)
-        break
+    # torch.set_printoptions(precision=None, threshold=None, edgeitems=None, linewidth=2000, profile=None, sci_mode=None)
+    # filepath = [r'../../Data/couplet/train/in.txt',
+    #             r'../../Data/couplet/train/out.txt']
+    # data = MyDataset(load_data(filepath))
+    # loader = data.get_loader(5)
+    # for i in loader:
+    #     print(type(i))
+    #     print(len(i))
+    #     print(i)
+    #     break
+    tokenizer = BertTokenizer.from_pretrained(
+            pretrained_model_name_or_path='bert-base-chinese',local_files_only=True,cache_dir='/home/ljp/Project/ProteinProject/cache')

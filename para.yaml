@@ -1,11 +1,11 @@
 Data:
-  in_path: ..\Data\couplet\train\in.txt
-  out_path: ..\Data\couplet\train\out.txt
+  in_path: /home/ljp/Project/ProteinProject/cache/Data/couplet/train/in.txt
+  out_path: /home/ljp/Project/ProteinProject/cache/Data/couplet/train/out.txt
   val_ratio: 0.1
 
 Train:
   batch_size: 64
-  epochs: 100
+  epochs: 2
 
 Optim:
   beta1: 0.9
@@ -19,8 +19,8 @@ Scheduler:
   warmup_ratio: 0.12
 
 Save:
-  img_save_dir: ..\save\img
-  model_save_dir: ..\save\model_save
+  img_save_dir: /home/ljp/Project/ProteinProject/cache/Save/img
+  model_save_dir: /home/ljp/Project/ProteinProject/cache/Save/model_save
 
 EarlyStop:
   early_stop: True

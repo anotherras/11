@@ -18,6 +18,7 @@ import pandas as pd
 import math
 from torch.optim.lr_scheduler import LambdaLR
 import sys
+import torch.distributed as dist
 
 sys.path.append('./model')
 
@@ -36,17 +37,19 @@ def train_one_epoch(config, model, train_loader, optimizer, criterion, scheduler
     train_loss = 0
     for src_input, tgt_input in tqdm(train_loader, desc=f"Epoch", leave=False, position=1):
         src = src_input['input_ids']
-        src_attmask = src_input['src_mask'].to(config.device)
+        src_attmask = src_input['src_mask'].cuda(non_blocking=True)
 
         tgt = tgt_input['input_ids']
-        tgt_attmask = tgt_input['tgt_mask'].to(config.device)
+        tgt_attmask = tgt_input['tgt_mask'].cuda(non_blocking=True)
 
-        src, tgt = src.to(config.device), tgt.to(config.device)
+        src, tgt = src.cuda(non_blocking=True), tgt.cuda(non_blocking=True)
         output = model(src, tgt[:, :-1], src_attmask, tgt_attmask)
 
         output = output.contiguous().view(-1, output.size(-1))
         tgt = tgt[:, 1:].contiguous().view(-1)
         loss = criterion(output, tgt)
+        step_metrci = {'loss':loss}
+        wandb.log(step_metrci)
         train_loss += loss.item()
         optimizer.zero_grad()
         loss.backward()
@@ -61,12 +64,12 @@ def evaluate(config, model, val_loader, criterion):
     with torch.no_grad():
         for src_input, tgt_input in tqdm(val_loader, desc=f"Val", leave=False):
             src = src_input['input_ids']
-            src_attmask = src_input['src_mask'].to(config.device)
+            src_attmask = src_input['src_mask'].cuda(non_blocking=True)
 
             tgt = tgt_input['input_ids']
-            tgt_attmask = tgt_input['tgt_mask'].to(config.device)
+            tgt_attmask = tgt_input['tgt_mask'].cuda(non_blocking=True)
 
-            src, tgt = src.to(config.device), tgt.to(config.device)
+            src, tgt = src.cuda(non_blocking=True), tgt.cuda(non_blocking=True)
             output = model(src, tgt[:, :-1], src_attmask, tgt_attmask)
 
             output = output.contiguous().view(-1, output.size(-1))
@@ -77,7 +80,6 @@ def evaluate(config, model, val_loader, criterion):
 
 
 def train_model(config, model, train_loader, val_loader, optimizer, criterion, scheduler):
-    model = model.to(config.device)
     best_loss = float("inf")
     history = []
     model_path = os.path.join(config.Save.model_save_dir, f"model_best.pth")
@@ -112,7 +114,13 @@ def train_model(config, model, train_loader, val_loader, optimizer, criterion, s
     logger.info(f"Save best model with val loss {best_loss:.6f} to {model_path}")
 
     model_path = os.path.join(config.model_save_dir, f"{model.name}_last.pth")
-    torch.save(model.state_dict(), model_path)
+    
+    checkpoint = {'net':model.state_dict(),
+                  'optimizer':optimizer.state_dict(),
+                  "epoch": epoch,
+                  'scheduler':scheduler.state_dict()}
+    
+    torch.save(checkpoint, model_path)
     logger.info(f"Save last model with val loss {val_loss:.6f} to {model_path}")
 
     history = pd.DataFrame(
@@ -127,6 +135,10 @@ def train_model(config, model, train_loader, val_loader, optimizer, criterion, s
 
 
 def main(config):
+    
+    dist.init_process_group(backend='nccl')
+    torch.cuda.set_device(config.local_rank)
+    
     wandb.alert(
         title="Start",
         text=f"training"
@@ -156,13 +168,15 @@ def main(config):
     logger.info(f"Build val dataset with {len(val_dataset)} samples")
 
     train_loader = train_dataset.get_loader(
-        config.Train.batch_size, shuffle=True)
+        config.Train.batch_size, shuffle=True,sampler=True)
     val_loader = val_dataset.get_loader(
         config.Train.batch_size, shuffle=False)
     logger.info(f"Build train dataloader with {len(train_loader)} batches")
     logger.info(f"Build val dataloader with {len(val_loader)} batches")
 
     model = make_model()
+    model = model.cuda()
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[config.local_rank])
     logger.info(f"Build model with mdoel")
 
     optimizer = optim.AdamW(
@@ -173,7 +187,7 @@ def main(config):
         weight_decay=config.Optim.weight_decay,
     )
 
-    criterion = nn.CrossEntropyLoss(ignore_index=0, reduction="mean")
+    criterion = nn.CrossEntropyLoss(ignore_index=0, reduction="mean").cuda()
 
     # scheduler
     lr_max, lr_min = config.Scheduler.lr_max, config.Scheduler.lr_min
@@ -190,18 +204,19 @@ def main(config):
     logger.info('Use warm up')
     scheduler = LambdaLR(optimizer, lr_lambda=WarmupExponentialLR)
 
-    df_lr = pd.DataFrame(
-        [WarmupExponentialLR(i) for i in range(T_max)],
-        columns=["Learning Rate"],
-    )
-    plt.figure(figsize=(10, 6))
-    sns.lineplot(data=df_lr, linewidth=2)
-    plt.title("Learning Rate Schedule")
-    plt.xlabel("Iteration")
-    plt.ylabel("Learning Rate")
-    lr_img_path = os.path.join(config.Save.img_save_dir, "lr_schedule.png")
-    plt.savefig(lr_img_path, dpi=300)
-    logger.info(f"Save learning rate schedule to {lr_img_path}")
+    if config.local_rank == 0:
+        df_lr = pd.DataFrame(
+            [WarmupExponentialLR(i) for i in range(T_max)],
+            columns=["Learning Rate"],
+        )
+        plt.figure(figsize=(10, 6))
+        sns.lineplot(data=df_lr, linewidth=2)
+        plt.title("Learning Rate Schedule")
+        plt.xlabel("Iteration")
+        plt.ylabel("Learning Rate")
+        lr_img_path = os.path.join(config.Save.img_save_dir, "lr_schedule.png")
+        plt.savefig(lr_img_path, dpi=300)
+        logger.info(f"Save learning rate schedule to {lr_img_path}")
 
     gc.collect()
     # torch.cuda.empty_cache()
@@ -225,12 +240,20 @@ def get_args():
     with open('para.yaml', 'r') as f:
         config = yaml.safe_load(f)
         new_config = dict2namespace(config)
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--local_rank', default=-1, type=int,
+                        help='node rank for distributed training')
+    args = parser.parse_args()
+    for key, value in vars(args).items():
+        setattr(new_config, key, value)
+        
     return new_config
 
 
 if __name__ == '__main__':
-    logger.add('../save/log/logger.log')
+    logger.add('./logger.log')
     config = get_args()
-    wandb.init(project='test', name='demo')
+    wandb.init(project='couplet', name='demo',config=config)
     main(config)
-    wandb.finish()
+    wandb.finish()  
