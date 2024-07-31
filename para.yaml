@@ -2,16 +2,19 @@ Data:
   in_path: /home/ljp/Project/ProteinProject/cache/Data/couplet/train/in.txt
   out_path: /home/ljp/Project/ProteinProject/cache/Data/couplet/train/out.txt
   val_ratio: 0.1
+  num_workers: 4
 
 Train:
-  batch_size: 64
-  epochs: 2
+  per_gpu_train_batch_size: 64
+  total_step: 
+  num_epochs: 10
 
 Optim:
   beta1: 0.9
   beta2: 0.98
-  epsilon: 10.0e-9
+  adam_epsilon: 10.0e-9
   weight_decay: 0.01
+  learning_rate: 1
 
 Scheduler:
   lr_max: 1.0e-3
@@ -27,11 +30,22 @@ EarlyStop:
   patience: 4
   delta: 0
 
+Log:
+  path: MyLog.log
+
+resume: False
 seed: 25560
 cuDNN: True
 debug: False
 device: cuda
-
+no_cuda: False
+do_train: True
+weight_decay: 0.1
+gradient_accumulation_steps: 5
+max_grad_norm: 0.2
+logging_steps: 30
+evaluate_during_training: True
+save_steps: 50
 
 #class Config:
 #    def __init__(self):

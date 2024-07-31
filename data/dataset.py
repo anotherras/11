@@ -56,13 +56,13 @@ class MyDataset(Dataset):
         out_tensor['tgt_mask'] = tgt_mask
         return in_tensor, out_tensor
 
-    def get_loader(self, batch_size, shuffle=True , sampler=False):
+    def get_loader(self, batch_size, shuffle=True ,num_workers=4, sampler=False):
         if sampler :
             return DataLoader(self, batch_size=batch_size, shuffle=shuffle,
-                          collate_fn=lambda batch: self.collate_fn(batch, self.tokenizer),pin_memory=True,sampler=DistributedSampler(self))
+                          collate_fn=lambda batch: self.collate_fn(batch, self.tokenizer),pin_memory=True,sampler=DistributedSampler(self),num_workers=num_workers)
         else:
             return DataLoader(self, batch_size=batch_size, shuffle=shuffle,
-                            collate_fn=lambda batch: self.collate_fn(batch, self.tokenizer))
+                            collate_fn=lambda batch: self.collate_fn(batch, self.tokenizer),pin_memory=True,num_workers=num_workers)
 
 
 if __name__ == '__main__':
