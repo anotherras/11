@@ -1,14 +1,17 @@
+import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
 import wandb
 from model.model import make_model
 from model.Embedding import PositionalEncoding, Embeddings
 from loguru import logger
 import torch
-from utils.util import seed_everything, EarlyStopping
+from utils.util import seed_everything, EarlyStopping, torch_distributed_zero_first
 from data.dataset import MyDataset, load_data
 from sklearn.model_selection import train_test_split
 from torch import nn, optim
 import matplotlib.pyplot as plt
-import os
 import gc
 from tqdm import tqdm, trange
 from flatten_dict import flatten
@@ -19,7 +22,6 @@ from torch.optim.lr_scheduler import LambdaLR
 import sys
 import torch.distributed as dist
 from omegaconf import OmegaConf
-
 
 sys.path.append("./model")
 
@@ -35,8 +37,10 @@ sys.path.append("./model")
 
 def do_evaluate(yaml_args, model, data_loader, criterion):
 
+    num_processes = yaml_args.world_size
     val_loss = 0
     nb_eval_steps = 0
+    losses = None
 
     for src_input, tgt_input in tqdm(data_loader, desc="Evalueating"):
         model.eval()
@@ -53,37 +57,135 @@ def do_evaluate(yaml_args, model, data_loader, criterion):
             output = output.contiguous().view(-1, output.size(-1))
             tgt = tgt[:, 1:].contiguous().view(-1)
             loss = criterion(output, tgt)
+            loss = loss.mean().detach()
 
-            val_loss += loss.item()
+            if loss.ndim == 0:
+                loss = loss.clone()[None]
+
+            if not loss.is_contiguous():
+                loss = loss.contiguous()
+
+            output_tensors = [torch.empty_like(loss) for _ in range(num_processes)]
+            reduce_losses = torch.cat(output_tensors, dim=0)
+            if command_args.world_size > 1:
+                torch.distributed.all_gather(output_tensors, loss)
+            losses = reduce_losses if losses is None else torch.cat((losses, reduce_losses), dim=0)
         nb_eval_steps += 1
 
-    return val_loss / nb_eval_steps
+    return losses.mean()
 
 
-def do_train(yaml_args, command_args, model, train_dataloader, val_dataloader, optimizer, scheduler, criterion):
+def do_train(yaml_args, command_args):
 
+    # 1. 设置随机种子
+    seed_everything(yaml_args.seed + command_args.local_rank)
+
+    # 2. 处理数据
+    with torch_distributed_zero_first(command_args.local_rank):
+
+        data = load_data([yaml_args.Data.in_path, yaml_args.Data.out_path])
+        if yaml_args.debug:
+            data = data[:1000]
+
+        data_train, data_val = train_test_split(data, test_size=yaml_args.Data.val_ratio, random_state=yaml_args.seed, shuffle=True)
+
+        train_dataset = MyDataset(data_train)
+        val_dataset = MyDataset(data_val)
+
+        logger.info(f"Build train dataset with {len(train_dataset)} samples and val dataset with {len(val_dataset)} samples")
+
+    train_loader = train_dataset.get_loader(
+        yaml_args.Train.per_gpu_train_batch_size,
+        shuffle=True,
+        sampler=True if command_args.local_rank != -1 else False,
+        num_workers=yaml_args.Data.num_workers,
+    )
+    val_loader = val_dataset.get_loader(
+        yaml_args.Train.per_gpu_train_batch_size,
+        shuffle=False,
+        sampler=True if command_args.local_rank != -1 else False,
+        num_workers=yaml_args.Data.num_workers,
+    )
+    if command_args.local_rank in [-1, 0]:
+        logger.info(f"Build train dataloader with {len(train_loader)} batches and val dataloader with {len(val_loader)} batches")
+
+    # 3.model
+    model = make_model()
+    model = model.cuda()
+
+    # 4.optimizer
+    no_decay = ["bias", "LayerNorm.weight"]
+    optimizer_grouped_parameters = [
+        {"params": [p for n, p in model.named_parameters() if (not any(nd in n for nd in no_decay))], "weight_decay": yaml_args.weight_decay},
+        {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0},
+    ]
+
+    optimizer = optim.AdamW(
+        optimizer_grouped_parameters,
+        lr=yaml_args.Optim.learning_rate,
+        eps=yaml_args.Optim.adam_epsilon,
+    )
+
+    # 5.Scheduler
+    lr_max, lr_min = yaml_args.Scheduler.lr_max, yaml_args.Scheduler.lr_min
+    T_max = yaml_args.Train.num_epochs * len(train_loader)
+    warm_up_iter = int(T_max * yaml_args.Scheduler.warmup_ratio)
+
+    def WarmupExponentialLR(cur_iter):
+        gamma = math.exp(math.log(lr_min / lr_max) / (T_max - warm_up_iter))
+        if cur_iter < warm_up_iter:
+            return (lr_max - lr_min) * (cur_iter / warm_up_iter) + lr_min
+        else:
+            return lr_max * gamma ** (cur_iter - warm_up_iter)
+
+    scheduler = LambdaLR(optimizer, lr_lambda=WarmupExponentialLR)
+
+    # 6.resume
+    start_epoch = 0
+    if yaml_args.resume:
+        checkpoint = torch.load(yaml_args.resume, map_location="cpu")
+        model.load_state_dict(checkpoint["model-state"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        start_epoch = checkpoint["epoch"] + 1
+
+        del checkpoint
+
+    if command_args.local_rank != -1:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[command_args.local_rank], output_device=command_args.lock_rank)
+
+    # 7.loss
+    criterion = nn.CrossEntropyLoss(ignore_index=0, reduction="mean").cuda()
+
+    # gc.collect()
+    # torch.cuda.empty_cache()
+
+    # 8.early_stop
     early_stopping = None
     if yaml_args.EarlyStop.early_stop:
-        logger.info("Use EarlyStop")
+        if command_args.local_rank in [-1, 0]:
+            logger.info("Use EarlyStop")
         early_stopping = EarlyStopping(patience=yaml_args.EarlyStop.patience, delta=yaml_args.EarlyStop.delta)
 
-    t_total = len(train_dataloader) // yaml_args.gradient_accumulation_steps * yaml_args.Train.num_epochs
+    # t_total = len(train_dataloader) // yaml_args.gradient_accumulation_steps * yaml_args.Train.num_epochs
 
-    global_step = 0.0
+    # 9. Train !!
+    global_step = 0
     tr_loss = 0.0
+    scheduler.last_epoch = start_epoch - 1
+
     model.zero_grad()
 
-    epoch_start = -1
-    if yaml_args.resume:
-        epoch_start = yaml_args.epoch_start
+    train_iterator = trange(start_epoch, int(yaml_args.Train.num_epochs), desc="Epoch", disable=command_args.local_rank not in [-1, 0])
 
-    train_iterator = trange(epoch_start + 1, int(yaml_args.Train.num_epochs), desc="Epoch", disable=command_args.local_rank not in [-1, 0])
+    for epoch in train_iterator:
 
-    for spoch in train_iterator:
-        epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=command_args.local_rank not in [-1, 0])
+        if command_args.local_rank != -1:
+            train_loader.sampler.set_epoch(epoch)
+
+        epoch_iterator = tqdm(train_loader, desc="Iteration", disable=command_args.local_rank not in [-1, 0])
         for step, (src_input, tgt_input) in enumerate(epoch_iterator):
             model.train()
-            train_loss = 0
+            global_step += 1
 
             src = src_input["input_ids"]
             src_attmask = src_input["src_mask"].cuda(non_blocking=True)
@@ -97,35 +199,38 @@ def do_train(yaml_args, command_args, model, train_dataloader, val_dataloader, o
 
             loss = criterion(output, tgt)
 
+            # 梯度累计
             if yaml_args.gradient_accumulation_steps > 1:
                 loss = loss / yaml_args.gradient_accumulation_steps
 
             loss.backward()
-            step_metrci = {"loss": loss}
-            wandb.log(step_metrci)
+            if command_args.local_rank in [-1, 0]:
+                step_metrci = {"loss": loss}
+                wandb.log(step_metrci)
             tr_loss += loss.item()
 
-            if (step + 1) % yaml_args.gradient_accumulation_steps == 0:
-                nn.utils.clip_grad_norm_(model.parameters(), yaml_args.max_grad_norm)
+            if (global_step + 1) % yaml_args.gradient_accumulation_steps == 0:
+                if yaml_args.max_grad_norm:
+                    nn.utils.clip_grad_norm_(model.parameters(), yaml_args.max_grad_norm)
 
                 optimizer.step()
                 scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
-                global_step += 1
 
-                if command_args.local_rank in [-1, 0] and yaml_args.logging_steps > 0 and global_step % yaml_args.logging_steps == 0:
-                    # Log metrics
-                    if (
-                        command_args.local_rank == -1 and yaml_args.evaluate_during_training
-                    ):  # Only evaluate when single GPU otherwise metrics may not average well
-                        eval_loss = do_evaluate(yaml_args, model, val_dataloader, criterion)
-                        scheduler_wandb = scheduler.get_last_lr()[0]
-                        eval_loss_dict = {"eval loss": eval_loss, "scheduler": scheduler_wandb}
-                        wandb.log(eval_loss_dict)
-                        stop = early_stopping(eval_loss)
-                        if stop:
-                            break
-                if command_args.local_rank in [-1, 0] and (yaml_args.save_steps > 0 and global_step % yaml_args.save_steps == 0):
+                if command_args.local_rank in [-1, 0]:
+                    scheduler_last_lr = scheduler.get_last_lr()[0]
+                    wandb.log({"scheduler": scheduler_last_lr})
+
+                # 9.1 Do evalute during Train
+                if yaml_args.evaluate_during_training and yaml_args.evaluate_steps > 0 and (global_step + 1) % yaml_args.evaluate_steps == 0:
+                    eval_loss = do_evaluate(command_args, model, val_loader, criterion)
+                    eval_loss_dict = {"eval loss": eval_loss}
+                    wandb.log(eval_loss_dict)
+                    stop = early_stopping(eval_loss)
+                    if stop:
+                        return
+
+                if command_args.local_rank in [-1, 0] and (yaml_args.save_steps > 0 and (global_step + 1) % yaml_args.save_steps == 0):
                     # Save model checkpoint
                     output_dir = os.path.join(yaml_args.Save.model_save_dir, "checkpoint-{}.bin".format(global_step))
                     # if not os.path.exists(output_dir):
@@ -134,7 +239,7 @@ def do_train(yaml_args, command_args, model, train_dataloader, val_dataloader, o
                     checkpoint = {
                         "model_state": model_to_save.state_dict(),
                         "optimizer": optimizer.state_dict(),
-                        "epoch": spoch,
+                        "epoch": epoch,
                         "scheduler": scheduler.state_dict(),
                     }
                     torch.save(checkpoint, output_dir)
@@ -145,108 +250,18 @@ def main(yaml_args, command_args):
     logger.add(yaml_args.Log.path)
     wandb.init(project="couplet", name="demo", config=flatten(yaml_args, reducer="dot"))
 
-    if command_args.local_rank == -1 or yaml_args.no_cuda:
+    if command_args.local_rank == -1:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        command_args.n_gpu = torch.cuda.device_count()
+        # command_args.n_gpu = 1
     else:
+        assert torch.cuda.device_count() > command_args.local_rank
         torch.cuda.set_device(command_args.local_rank)
         device = torch.device("cuda", command_args.local_rank)
-        dist.init_process_group(backend="nccl")
-        command_args.n_gpu = 1
-    command_args.device = device
+        dist.init_process_group(backend="nccl", init_method="env://")
 
     wandb.alert(title="Start", text=f"training")
 
-    seed_everything(yaml_args, command_args)
-
-    # if yaml_args.cuDNN:
-    #     torch.backends.cudnn.enabled = True
-    #     torch.backends.cudnn.benchmark = True
-    #     torch.backends.cudnn.deterministic = True
-
-    if command_args.local_rank not in [-1, 0]:
-        torch.distributed.barrier()
-
-    data = load_data([yaml_args.Data.in_path, yaml_args.Data.out_path])
-    if yaml_args.debug:
-        data = data[:1000]
-
-    if command_args.local_rank == 0:
-        torch.distributed.barrier()
-
-    model = make_model()
-    model = model.cuda()
-
-    data_train, data_val = train_test_split(data, test_size=yaml_args.Data.val_ratio, random_state=yaml_args.seed, shuffle=True)
-
-    # 这个地方还是要改一下
-    yaml_args.train_batch_size = yaml_args.Train.per_gpu_train_batch_size * max(command_args.n_gpu, 0)
-
-    train_dataset = MyDataset(data_train)
-    val_dataset = MyDataset(data_val)
-    logger.info(f"Build train dataset with {len(train_dataset)} samples and val dataset with {len(val_dataset)} samples")
-
-    train_loader = train_dataset.get_loader(
-        yaml_args.train_batch_size, shuffle=True, sampler=True if command_args.local_rank != -1 else False, num_workers=yaml_args.Data.num_workers
-    )
-    val_loader = val_dataset.get_loader(yaml_args.train_batch_size, shuffle=False, num_workers=yaml_args.Data.num_workers)
-    logger.info(f"Build train dataloader with {len(train_loader)} batches and val dataloader with {len(val_loader)} batches")
-
-    no_decay = ["bias", "LayerNorm.weight"]
-    optimizer_grouped_parameters = [
-        {"params": [p for n, p in model.named_parameters() if (not any(nd in n for nd in no_decay))], "weight_decay": yaml_args.weight_decay},
-        {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0},
-    ]
-
-    optimizer = optim.AdamW(
-        optimizer_grouped_parameters,
-        lr=yaml_args.Optim.learning_rate,
-        eps=yaml_args.Optim.adam_epsilon,
-    )
-
-    if yaml_args.resume:
-        checkpoint = torch.load(yaml_args.resume, map_location="cpu")
-        model.load_state_dict(checkpoint["model-state"])
-        optimizer.load_state_dict(checkpoint["optimizer"])
-        yaml_args.start = checkpoint["epoch"]
-        last_step = yaml_args.epoch_start * (len(train_loader) // yaml_args.gradient_accumulation_steps)
-
-    lr_max, lr_min = yaml_args.Scheduler.lr_max, yaml_args.Scheduler.lr_min
-    T_max = yaml_args.Train.num_epochs * len(train_loader)
-    warm_up_iter = int(T_max * yaml_args.Scheduler.warmup_ratio)
-
-    def WarmupExponentialLR(cur_iter):
-        gamma = math.exp(math.log(lr_min / lr_max) / (T_max - warm_up_iter))
-        if cur_iter < warm_up_iter:
-            return (lr_max - lr_min) * (cur_iter / warm_up_iter) + lr_min
-        else:
-            return lr_max * gamma ** (cur_iter - warm_up_iter)
-
-    scheduler = LambdaLR(optimizer, lr_lambda=WarmupExponentialLR, last_epoch=last_step if yaml_args.resume else -1)
-
-    if command_args.local_rank != -1:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[command_args.local_rank])
-
-    criterion = nn.CrossEntropyLoss(ignore_index=0, reduction="mean").cuda()
-
-    if command_args.local_rank == 0:
-        df_lr = pd.DataFrame(
-            [WarmupExponentialLR(i) for i in range(T_max)],
-            columns=["Learning Rate"],
-        )
-        plt.figure(figsize=(10, 6))
-        sns.lineplot(data=df_lr, linewidth=2)
-        plt.title("Learning Rate Schedule")
-        plt.xlabel("Iteration")
-        plt.ylabel("Learning Rate")
-        lr_img_path = os.path.join(yaml_args.Save.img_save_dir, "lr_schedule.png")
-        plt.savefig(lr_img_path, dpi=300)
-        logger.info(f"Save learning rate schedule to {lr_img_path}")
-
-    gc.collect()
-    # torch.cuda.empty_cache()
-
-    do_train(yaml_args, command_args, model, train_loader, val_loader, optimizer, scheduler, criterion)
+    do_train(yaml_args, command_args)
 
     wandb.finish()
 
@@ -261,7 +276,8 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--local_rank", type=int, default=-1, help="xx")
+    parser.add_argument("--local_rank", type=int, default=-1, help="local_rank")
+    parser.add_argument("--world_size", type=int, default=1, help="world_size")
     command_args = parser.parse_args()
 
     yaml_args = get_args_from_yaml("para.yaml")
