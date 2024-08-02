@@ -4,8 +4,21 @@ Data:
   val_ratio: 0.05
   num_workers: 4
 
+Model:
+  n_head: 8
+  d_model: 512
+  hidden: 1024
+  vocab_size: 21128
+  embed_size: 512
+  n_layer: 6
+  dropout: 0.1
+  src_pad_idx: 0
+  tgt_pad_idx: 0
+  # tgt_sos_idx:
+  # max_len=5000
+
 Train:
-  per_gpu_train_batch_size: 64
+  per_gpu_train_batch_size: 128
   total_step: 
   num_epochs: 10
 
@@ -13,12 +26,12 @@ Optim:
   beta1: 0.9
   beta2: 0.98
   adam_epsilon: 10.0e-9
-  weight_decay: 0.01
+  weight_decay: 0.00002
   learning_rate: 5
 
 Scheduler:
-  lr_max: 1.0e-3
-  lr_min: 1.0e-4
+  lr_max: 1.0e-2
+  lr_min: 1.0e-3
   warmup_ratio: 0.12
 
 Save:
@@ -33,14 +46,14 @@ EarlyStop:
 Log:
   path: MyLog.log
 
+
 resume: False
 seed: 25560
 cuDNN: True
 debug: False
 do_train: True
-weight_decay: 0.1
 gradient_accumulation_steps: 5
-max_grad_norm: 0.2
+max_grad_norm: 1
 evaluate_steps: 100
 evaluate_during_training: True
 save_steps: 500

@@ -1,22 +1,18 @@
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 import wandb
-from model.model import make_model
-from model.Embedding import PositionalEncoding, Embeddings
+from model.model import Transformer
 from loguru import logger
 import torch
 from utils.util import seed_everything, EarlyStopping, torch_distributed_zero_first
 from data.dataset import MyDataset, load_data
 from sklearn.model_selection import train_test_split
 from torch import nn, optim
-import matplotlib.pyplot as plt
 import gc
 from tqdm import tqdm, trange
 from flatten_dict import flatten
-import seaborn as sns
-import pandas as pd
 import math
 from torch.optim.lr_scheduler import LambdaLR
 import sys
@@ -46,13 +42,10 @@ def do_evaluate(yaml_args, model, data_loader, criterion):
         model.eval()
 
         with torch.no_grad():
-            src = src_input["input_ids"]
-            src_attmask = src_input["src_mask"].cuda(non_blocking=True)
-            tgt = tgt_input["input_ids"]
-            tgt_attmask = tgt_input["tgt_mask"].cuda(non_blocking=True)
-            src, tgt = src.cuda(non_blocking=True), tgt.cuda(non_blocking=True)
+            src = src_input["input_ids"].cuda(non_blocking=True)
+            tgt = tgt_input["input_ids"].cuda(non_blocking=True)
 
-            output = model(src, tgt[:, :-1], src_attmask, tgt_attmask)
+            output = model(src, tgt[:, :-1])
 
             output = output.contiguous().view(-1, output.size(-1))
             tgt = tgt[:, 1:].contiguous().view(-1)
@@ -96,13 +89,13 @@ def do_train(yaml_args, command_args):
 
     train_loader = train_dataset.get_loader(
         yaml_args.Train.per_gpu_train_batch_size,
-        shuffle=True,
+        shuffle=None,
         sampler=True if command_args.local_rank != -1 else False,
         num_workers=yaml_args.Data.num_workers,
     )
     val_loader = val_dataset.get_loader(
         yaml_args.Train.per_gpu_train_batch_size,
-        shuffle=False,
+        shuffle=None,
         sampler=True if command_args.local_rank != -1 else False,
         num_workers=yaml_args.Data.num_workers,
     )
@@ -110,13 +103,23 @@ def do_train(yaml_args, command_args):
         logger.info(f"Build train dataloader with {len(train_loader)} batches and val dataloader with {len(val_loader)} batches")
 
     # 3.model
-    model = make_model()
+    model = Transformer(
+        yaml_args.Model.n_head,
+        yaml_args.Model.d_model,
+        yaml_args.Model.hidden,
+        yaml_args.Model.vocab_size,
+        yaml_args.Model.embed_size,
+        yaml_args.Model.n_layer,
+        yaml_args.Model.dropout,
+        yaml_args.Model.src_pad_idx,
+        yaml_args.Model.tgt_pad_idx,
+    )
     model = model.cuda()
 
     # 4.optimizer
     no_decay = ["bias", "LayerNorm.weight"]
     optimizer_grouped_parameters = [
-        {"params": [p for n, p in model.named_parameters() if (not any(nd in n for nd in no_decay))], "weight_decay": yaml_args.weight_decay},
+        {"params": [p for n, p in model.named_parameters() if (not any(nd in n for nd in no_decay))], "weight_decay": yaml_args.Optim.weight_decay},
         {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0},
     ]
 
@@ -151,7 +154,7 @@ def do_train(yaml_args, command_args):
         del checkpoint
 
     if command_args.local_rank != -1:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[command_args.local_rank], output_device=command_args.lock_rank)
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[command_args.local_rank], output_device=command_args.local_rank)
 
     # 7.loss
     criterion = nn.CrossEntropyLoss(ignore_index=0, reduction="mean").cuda()
@@ -187,13 +190,12 @@ def do_train(yaml_args, command_args):
             model.train()
             global_step += 1
 
-            src = src_input["input_ids"]
-            src_attmask = src_input["src_mask"].cuda(non_blocking=True)
-            tgt = tgt_input["input_ids"]
-            tgt_attmask = tgt_input["tgt_mask"].cuda(non_blocking=True)
-            src, tgt = src.cuda(non_blocking=True), tgt.cuda(non_blocking=True)
+            src = src_input["input_ids"].cuda(non_blocking=True)
+            # src_attmask = src_input["src_mask"].cuda(non_blocking=True)
+            tgt = tgt_input["input_ids"].cuda(non_blocking=True)
+            # tgt_attmask = tgt_input["tgt_mask"].cuda(non_blocking=True)
 
-            output = model(src, tgt[:, :-1], src_attmask, tgt_attmask)
+            output = model(src, tgt[:, :-1])
             output = output.contiguous().view(-1, output.size(-1))
             tgt = tgt[:, 1:].contiguous().view(-1)
 
@@ -204,6 +206,7 @@ def do_train(yaml_args, command_args):
                 loss = loss / yaml_args.gradient_accumulation_steps
 
             loss.backward()
+
             if command_args.local_rank in [-1, 0]:
                 step_metrci = {"loss": loss}
                 wandb.log(step_metrci)
@@ -225,7 +228,8 @@ def do_train(yaml_args, command_args):
                 if yaml_args.evaluate_during_training and yaml_args.evaluate_steps > 0 and (global_step + 1) % yaml_args.evaluate_steps == 0:
                     eval_loss = do_evaluate(command_args, model, val_loader, criterion)
                     eval_loss_dict = {"eval loss": eval_loss}
-                    wandb.log(eval_loss_dict)
+                    if command_args.local_rank in [-1, 0]:
+                        wandb.log(eval_loss_dict)
                     stop = early_stopping(eval_loss)
                     if stop:
                         return
@@ -248,7 +252,8 @@ def do_train(yaml_args, command_args):
 def main(yaml_args, command_args):
 
     logger.add(yaml_args.Log.path)
-    wandb.init(project="couplet", name="demo", config=flatten(yaml_args, reducer="dot"))
+    if command_args.local_rank in [-1, 0]:
+        wandb.init(project="couplet", name="demo", config=flatten(yaml_args, reducer="dot"))
 
     if command_args.local_rank == -1:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -259,11 +264,12 @@ def main(yaml_args, command_args):
         device = torch.device("cuda", command_args.local_rank)
         dist.init_process_group(backend="nccl", init_method="env://")
 
-    wandb.alert(title="Start", text=f"training")
+    if command_args.local_rank in [-1, 0]:
+        wandb.alert(title="Start", text=f"training")
 
     do_train(yaml_args, command_args)
-
-    wandb.finish()
+    if command_args.local_rank in [-1, 0]:
+        wandb.finish()
 
 
 def get_args_from_yaml(yaml_path):

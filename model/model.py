@@ -4,220 +4,191 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import math
-from torch.nn.functional import log_softmax
 import torch.nn as nn
 import torch
-import copy
-from Embedding import PositionalEncoding, Embeddings
-
-
-class EncoderDecoder(nn.Module):
-    """
-    A standard Encoder-Decoder architecture. Base for this and many
-    other models.
-    """
-
-    def __init__(self, encoder, decoder, src_embed, tgt_embed, generator):
-        super(EncoderDecoder, self).__init__()
-        self.encoder = encoder
-        self.decoder = decoder
-        self.src_embed = src_embed
-        self.tgt_embed = tgt_embed
-        self.generator = generator
-
-    def forward(self, src, tgt, src_mask, tgt_mask):
-        "Take in and process masked src and target sequences."
-        return self.generator(self.decode(self.encode(src, src_mask), src_mask, tgt, tgt_mask))
-
-    def encode(self, src, src_mask):
-        return self.encoder(self.src_embed(src), src_mask)
-
-    def decode(self, memory, src_mask, tgt, tgt_mask):
-        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
-
-
-class Generator(nn.Module):
-    "Define standard linear + softmax generation step."
-
-    def __init__(self, d_model, vocab):
-        super(Generator, self).__init__()
-        self.proj = nn.Linear(d_model, vocab)
-
-    def forward(self, x):
-        return log_softmax(self.proj(x), dim=-1)
-
-
-def clones(module, N):
-    "Produce N identical layers."
-    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
-
-
-class LayerNorm(nn.Module):
-    def __init__(self, features, eps=1e-6):
-        super().__init__()
-        self.a_2 = nn.Parameter(torch.ones(features))
-        self.b_2 = nn.Parameter(torch.zeros(features))
-        self.eps = eps
-
-    def forward(self, x):
-        mean = x.mean(-1, keepdim=True)
-        std = x.std(-1, keepdim=True)
-        return self.a_2 * (x - mean) / (std + self.eps) + self.b_2
-
-
-class SublayerConnection(nn.Module):
-    def __init__(self, size, dropout):
-        super().__init__()
-        self.norm = LayerNorm(size)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x, sublayer):
-        return x + self.dropout(sublayer(self.norm(x)))
-
-
-class EncoderLayer(nn.Module):
-    def __init__(self, size, self_attn, feed_foreard, dropout):
-        super(EncoderLayer, self).__init__()
-        self.self_attn = self_attn
-        self.feed_forward = feed_foreard
-        self.sublayer = clones(SublayerConnection(size, dropout), 3)
-        self.size = size
-
-    def forward(self, x, mask):
-        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
-        return self.sublayer[1](x, self.feed_forward)
-
-
-class Encoder(nn.Module):
-    "Core encoder is a stack of N layers"
-
-    def __init__(self, layer, N):
-        super(Encoder, self).__init__()
-        self.layers = clones(layer, N)
-        self.norm = LayerNorm(layer.size)
-
-    def forward(self, x, mask):
-        "Pass the input (and mask) through each layer in turn."
-        for layer in self.layers:
-            x = layer(x, mask)
-        return self.norm(x)
-
-
-class DecoderLayer(nn.Module):
-    "Decoder is made of self-attn, src-attn, and feed forward (defined below)"
-
-    def __init__(self, size, self_attn, src_attn, feed_forward, dropout):
-        super(DecoderLayer, self).__init__()
-        self.size = size
-        self.self_attn = self_attn
-        self.src_attn = src_attn
-        self.feed_forward = feed_forward
-        self.sublayer = clones(SublayerConnection(size, dropout), 3)
-
-    def forward(self, x, memory, src_mask, tgt_mask):
-        "Follow Figure 1 (right) for connections."
-        m = memory
-        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
-        x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask))
-        return self.sublayer[2](x, self.feed_forward)
-
-
-class Decoder(nn.Module):
-    "Generic N layer decoder with masking."
-
-    def __init__(self, layer, N):
-        super(Decoder, self).__init__()
-        self.layers = clones(layer, N)
-        self.norm = LayerNorm(layer.size)
-
-    def forward(self, x, memory, src_mask, tgt_mask):
-        for layer in self.layers:
-            x = layer(x, memory, src_mask, tgt_mask)
-        return self.norm(x)
-
-
-def attention(query, key, value, mask=None, dropout=None):
-    d_k = query.size(-1)
-    scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
-    if mask is not None:
-        scores = scores.masked_fill(mask == 0, -1e9)
-    p_attn = scores.softmax(dim=-1)
-    if dropout is not None:
-        p_attn = dropout(p_attn)
-    return torch.matmul(p_attn, value), p_attn
+from Embedding import TransformerEmbedding
 
 
 class MultiHeadedAttention(nn.Module):
-    def __init__(self, h, d_model, dropout=0.1):
+    def __init__(self, n_head, d_model, dropout=0.1):
         "Take in model size and number of heads."
         super(MultiHeadedAttention, self).__init__()
-        assert d_model % h == 0
-        self.d_k = d_model // h
-        self.h = h
-        self.linears = clones(nn.Linear(d_model, d_model), 4)
-        self.attn = None
-        self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, query, key, value, mask=None):
-        "Implements Figure 2"
+        assert d_model % n_head == 0
+
+        self.n_head = n_head
+        self.d_model = d_model
+        self.attention_head_size = d_model // n_head
+
+        self.w_q = nn.Linear(d_model, d_model)
+        self.w_k = nn.Linear(d_model, d_model)
+        self.w_v = nn.Linear(d_model, d_model)
+
+        self.dropout = nn.Dropout(dropout)
+
+    def transpose_for_scores(self, x):
+        new_shape = x.size()[:-1] + (self.n_head, self.attention_head_size)
+        x = x.view(new_shape)
+        return x.permute(0, 2, 1, 3)
+
+    def forward(self, q, k, v, mask=None):
+
+        q, k, v = self.w_q(q), self.w_k(k), self.w_v(v)
+        q, k, v = self.transpose_for_scores(q), self.transpose_for_scores(k), self.transpose_for_scores(v)
+
+        attn_score = torch.matmul(q, k.transpose(-1, -2)) / math.sqrt(self.attention_head_size)
+
         if mask is not None:
-            # Same mask applied to all h heads.
-            mask = mask.unsqueeze(1)
-        nbatches = query.size(0)
+            attn_score = attn_score.masked_fill(mask == 0, -1e9)
 
-        # 1) Do all the linear projections in batch from d_model => h x d_k
-        query, key, value = [
-            lin(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
-            for lin, x in zip(self.linears, (query, key, value))
-        ]
+        attention_probs = nn.functional.softmax(attn_score, dim=-1)
+        attention_probs = self.dropout(attention_probs)
+        out = torch.matmul(attention_probs, v)
 
-        # 2) Apply attention on all the projected vectors in batch.
-        x, self.attn = attention(
-            query, key, value, mask=mask, dropout=self.dropout
-        )
-
-        # 3) "Concat" using a view and apply a final linear.
-        x = (
-            x.transpose(1, 2)
-            .contiguous()
-            .view(nbatches, -1, self.h * self.d_k)
-        )
-        del query
-        del key
-        del value
-        return self.linears[-1](x)
+        out = out.permute(0, 2, 1, 3).contiguous()
+        new_shape = out.size()[:-2] + (self.d_model,)
+        out = out.view(new_shape)
+        return out
 
 
 class PositionwiseFeedForward(nn.Module):
-    "Implements FFN equation."
-
-    def __init__(self, d_model, d_ff, dropout=0.1):
+    def __init__(self, d_model, hidden, dropout=0.1):
         super(PositionwiseFeedForward, self).__init__()
-        self.w_1 = nn.Linear(d_model, d_ff)
-        self.w_2 = nn.Linear(d_ff, d_model)
+        self.w_1 = nn.Linear(d_model, hidden)
+        self.w_2 = nn.Linear(hidden, d_model)
+        self.relu = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        return self.w_2(self.dropout(self.w_1(x).relu()))
+        x = self.w_1(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        x = self.w_2(x)
+        return x
 
 
-def make_model(src_vocab=21128, tgt_vocab=21128, N=6, d_model=512, d_ff=2048, h=8, dropout=0.1):
-    "Helper: Construct a model from hyperparameters."
-    c = copy.deepcopy
-    attn = MultiHeadedAttention(h, d_model)
-    ff = PositionwiseFeedForward(d_model, d_ff, dropout)
-    position = PositionalEncoding(d_model, dropout)
-    model = EncoderDecoder(
-        Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
-        Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout), N),
-        nn.Sequential(Embeddings(d_model, src_vocab), c(position)),
-        nn.Sequential(Embeddings(d_model, tgt_vocab), c(position)),
-        Generator(d_model, tgt_vocab),
-    )
+class EncoderLayer(nn.Module):
+    def __init__(self, n_head, d_model, hidden, dropout):
+        super(EncoderLayer, self).__init__()
+        self.self_attn = MultiHeadedAttention(n_head, d_model)
+        self.linear1 = nn.Linear(d_model, d_model)
+        self.dropout1 = nn.Dropout(dropout)
+        self.layernorm1 = nn.LayerNorm(d_model)
 
-    # This was important from their code.
-    # Initialize parameters with Glorot / fan_avg.
-    for p in model.parameters():
-        if p.dim() > 1:
-            nn.init.xavier_uniform_(p)
-    return model
+        self.ffn = PositionwiseFeedForward(d_model, hidden, dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        self.layernorm2 = nn.LayerNorm(d_model)
+
+    def forward(self, x, mask):
+        _x = x
+        x = self.self_attn(x, x, x, mask)
+        x = self.linear1(x)
+        x = self.dropout1(x)
+        x = self.layernorm1(x + _x)
+
+        _x = x
+        x = self.ffn(x)
+        x = self.dropout2(x)
+        x = self.layernorm2(x + _x)
+        return x
+
+
+class Encoder(nn.Module):
+    def __init__(self, n_head, d_model, hidden, vocab_size, embed_size, n_layer, dropout, max_len=5000) -> None:
+        super().__init__()
+        self.emb = TransformerEmbedding(vocab_size, embed_size, dropout, max_len=max_len)
+        self.layer = nn.ModuleList([EncoderLayer(n_head, d_model, hidden, dropout) for _ in range(n_layer)])
+
+    def forward(self, x, src_mask):
+        x = self.emb(x)
+
+        for layer in self.layer:
+            x = layer(x, src_mask)
+        return x
+
+
+class DecoderLayer(nn.Module):
+    def __init__(self, n_head, d_model, hidden, dropout) -> None:
+        super().__init__()
+        self.self_attn = MultiHeadedAttention(n_head, d_model)
+        self.linear1 = nn.Linear(d_model, d_model)
+        self.dropout1 = nn.Dropout(dropout)
+        self.layernorm1 = nn.LayerNorm(d_model)
+
+        self.enc_dec_attn = MultiHeadedAttention(n_head, d_model)
+        self.linear2 = nn.Linear(d_model, d_model)
+        self.dropout2 = nn.Dropout(dropout)
+        self.layernorm2 = nn.LayerNorm(d_model)
+
+        self.ffn = PositionwiseFeedForward(d_model, hidden, dropout)
+        self.dropout3 = nn.Dropout(dropout)
+        self.layernorm3 = nn.LayerNorm(d_model)
+
+    def forward(self, dec, enc, tgt_mask, src_mask):
+        _x = dec
+        x = self.self_attn(dec, dec, dec, tgt_mask)
+        x = self.linear1(x)
+        x = self.dropout1(x)
+        x = self.layernorm1(x + _x)
+
+        if enc is not None:
+            _x = x
+            x = self.enc_dec_attn(x, enc, enc, src_mask)
+            x = self.linear2(x)
+            x = self.dropout2(x)
+            x = self.layernorm2(x + _x)
+
+        _x = x
+        x = self.ffn(x)
+        x = self.dropout3(x)
+        x = self.layernorm3(x + _x)
+        return x
+
+
+class Decoder(nn.Module):
+    def __init__(self, n_head, d_model, hidden, vocab_size, embed_size, n_layer, dropout, max_len) -> None:
+        super().__init__()
+        self.emb = TransformerEmbedding(vocab_size, embed_size, dropout, max_len=max_len)
+        self.layer = nn.ModuleList({DecoderLayer(n_head, d_model, hidden, dropout) for _ in range(n_layer)})
+        self.linear = nn.Linear(d_model, vocab_size)
+
+    def forward(self, dec, enc, tgt_mask, src_mask):
+        x = self.emb(dec)
+        for layer in self.layer:
+            x = layer(x, enc, tgt_mask, src_mask)
+        x = self.linear(x)
+        return x
+
+
+class Transformer(nn.Module):
+    def __init__(self, n_head, d_model, hidden, vocab_size, embed_size, n_layer, dropout, src_pad_idx, tgt_pad_idx, max_len=5000) -> None:
+        super().__init__()
+
+        self.src_pad_idx = src_pad_idx
+        self.tgt_pad_idx = tgt_pad_idx
+        # self.tgt_sos_idx = tgt_sos_idx
+
+        self.encoder = Encoder(n_head, d_model, hidden, vocab_size, embed_size, n_layer, dropout, max_len)
+        self.decoder = Decoder(n_head, d_model, hidden, vocab_size, embed_size, n_layer, dropout, max_len)
+
+    def forward(
+        self,
+        src,
+        tgt,
+    ):
+        src_mask = self.make_src_mask(src)
+        tgt_mask = self.make_trg_mask(tgt)
+        enc_src = self.encoder(src, src_mask)
+        output = self.decoder(tgt, enc_src, tgt_mask, src_mask)
+        return output
+
+    def make_src_mask(self, src):
+        src_mask = (src != self.src_pad_idx).unsqueeze(1).unsqueeze(2)
+        return src_mask
+
+    def make_trg_mask(self, tgt):
+        tgt_pad_mask = (tgt != self.tgt_pad_idx).unsqueeze(1).unsqueeze(3)
+        tgt_len = tgt.shape[1]
+        tgt_sub_mask = torch.tril(torch.ones(tgt_len, tgt_len)).type(torch.ByteTensor).cuda()
+        tgt_mask = tgt_pad_mask & tgt_sub_mask
+        return tgt_mask

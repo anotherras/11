@@ -96,3 +96,76 @@
 2024-08-01 17:45:23.510 | INFO     | __main__:do_train:95 - Build train dataset with 731966 samples and val dataset with 38525 samples
 2024-08-01 17:45:23.512 | INFO     | __main__:do_train:110 - Build train dataloader with 11437 batches and val dataloader with 602 batches
 2024-08-01 17:45:26.926 | INFO     | __main__:do_train:166 - Use EarlyStop
+2024-08-01 18:08:20.358 | INFO     | __main__:do_train:95 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-01 18:08:24.370 | INFO     | __main__:do_train:95 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-01 18:09:15.010 | INFO     | __main__:do_train:95 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-01 18:09:18.962 | INFO     | __main__:do_train:95 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-01 18:12:01.551 | INFO     | __main__:do_train:95 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-01 18:12:04.109 | INFO     | __main__:do_train:110 - Build train dataloader with 5719 batches and val dataloader with 301 batches
+2024-08-01 18:12:05.486 | INFO     | __main__:do_train:95 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-01 18:13:26.591 | INFO     | __main__:do_train:95 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-01 18:13:29.134 | INFO     | __main__:do_train:110 - Build train dataloader with 5719 batches and val dataloader with 301 batches
+2024-08-01 18:13:30.076 | INFO     | __main__:do_train:166 - Use EarlyStop
+2024-08-01 18:13:30.521 | INFO     | __main__:do_train:95 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-01 23:58:40.075 | INFO     | __main__:do_train:91 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-01 23:58:40.077 | INFO     | __main__:do_train:106 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-01 23:59:37.246 | INFO     | __main__:do_train:91 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-01 23:59:37.248 | INFO     | __main__:do_train:106 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-02 00:00:28.629 | INFO     | __main__:do_train:91 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 00:00:28.630 | INFO     | __main__:do_train:106 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-02 00:01:05.877 | INFO     | __main__:do_train:172 - Use EarlyStop
+2024-08-02 00:01:50.271 | INFO     | __main__:do_train:91 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 00:01:50.273 | INFO     | __main__:do_train:106 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-02 00:01:53.245 | INFO     | __main__:do_train:172 - Use EarlyStop
+2024-08-02 00:03:08.921 | INFO     | __main__:do_train:91 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 00:03:08.923 | INFO     | __main__:do_train:106 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-02 00:03:11.896 | INFO     | __main__:do_train:172 - Use EarlyStop
+2024-08-02 00:04:53.928 | INFO     | __main__:do_train:91 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 00:04:53.930 | INFO     | __main__:do_train:106 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-02 00:04:56.890 | INFO     | __main__:do_train:172 - Use EarlyStop
+2024-08-02 00:06:37.420 | INFO     | __main__:do_train:91 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 00:06:37.421 | INFO     | __main__:do_train:106 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-02 00:06:40.398 | INFO     | __main__:do_train:172 - Use EarlyStop
+2024-08-02 00:07:42.228 | INFO     | __main__:do_train:91 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 00:07:42.229 | INFO     | __main__:do_train:106 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-02 00:07:45.185 | INFO     | __main__:do_train:172 - Use EarlyStop
+2024-08-02 00:09:16.501 | INFO     | __main__:do_train:91 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 00:09:16.503 | INFO     | __main__:do_train:106 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-02 00:09:19.508 | INFO     | __main__:do_train:172 - Use EarlyStop
+2024-08-02 00:11:24.589 | INFO     | __main__:do_train:91 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 00:11:24.591 | INFO     | __main__:do_train:106 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-02 00:11:27.561 | INFO     | __main__:do_train:172 - Use EarlyStop
+2024-08-02 00:15:03.723 | INFO     | __main__:do_train:91 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 00:15:03.724 | INFO     | __main__:do_train:106 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-02 00:15:06.860 | INFO     | __main__:do_train:172 - Use EarlyStop
+2024-08-02 00:16:04.147 | INFO     | __main__:do_train:91 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 00:16:04.149 | INFO     | __main__:do_train:106 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-02 00:16:07.174 | INFO     | __main__:do_train:172 - Use EarlyStop
+2024-08-02 00:17:10.418 | INFO     | __main__:do_train:91 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 00:17:10.420 | INFO     | __main__:do_train:106 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-02 00:17:13.551 | INFO     | __main__:do_train:172 - Use EarlyStop
+2024-08-02 10:20:19.593 | INFO     | __main__:do_train:88 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 10:20:19.594 | INFO     | __main__:do_train:103 - Build train dataloader with 11437 batches and val dataloader with 602 batches
+2024-08-02 10:20:22.753 | INFO     | __main__:do_train:169 - Use EarlyStop
+2024-08-02 10:35:35.774 | INFO     | __main__:do_train:88 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 10:35:35.776 | INFO     | __main__:do_train:103 - Build train dataloader with 5719 batches and val dataloader with 301 batches
+2024-08-02 10:35:38.967 | INFO     | __main__:do_train:169 - Use EarlyStop
+2024-08-02 10:46:52.281 | INFO     | __main__:do_train:88 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 10:46:54.850 | INFO     | __main__:do_train:103 - Build train dataloader with 2860 batches and val dataloader with 151 batches
+2024-08-02 10:46:55.568 | INFO     | __main__:do_train:169 - Use EarlyStop
+2024-08-02 10:46:56.246 | INFO     | __main__:do_train:88 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 10:52:37.138 | INFO     | __main__:do_train:88 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 10:52:37.139 | INFO     | __main__:do_train:103 - Build train dataloader with 5719 batches and val dataloader with 301 batches
+2024-08-02 10:55:23.546 | INFO     | __main__:do_train:88 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 10:55:23.546 | INFO     | __main__:do_train:103 - Build train dataloader with 5719 batches and val dataloader with 301 batches
+2024-08-02 10:55:26.796 | INFO     | __main__:do_train:169 - Use EarlyStop
+2024-08-02 11:05:03.564 | INFO     | __main__:do_train:88 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 11:05:03.565 | INFO     | __main__:do_train:103 - Build train dataloader with 5719 batches and val dataloader with 301 batches
+2024-08-02 11:05:06.769 | INFO     | __main__:do_train:169 - Use EarlyStop
+2024-08-02 11:08:40.189 | INFO     | __main__:do_train:88 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 11:08:40.189 | INFO     | __main__:do_train:103 - Build train dataloader with 5719 batches and val dataloader with 301 batches
+2024-08-02 11:08:43.435 | INFO     | __main__:do_train:169 - Use EarlyStop
+2024-08-02 11:09:28.417 | INFO     | __main__:do_train:88 - Build train dataset with 731966 samples and val dataset with 38525 samples
+2024-08-02 11:09:31.019 | INFO     | __main__:do_train:103 - Build train dataloader with 2860 batches and val dataloader with 151 batches
+2024-08-02 11:09:31.733 | INFO     | __main__:do_train:169 - Use EarlyStop
+2024-08-02 11:09:32.388 | INFO     | __main__:do_train:88 - Build train dataset with 731966 samples and val dataset with 38525 samples
